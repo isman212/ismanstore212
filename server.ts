@@ -173,7 +173,7 @@ function lookupAccountLocally(
         valid: false,
         accountName: '',
         source: 'auto-verifier',
-        message: 'User ID harus berupa angka minimal 5 digit.'
+        message: 'User ID harus berupa angka minimal 12 digit.'
       };
     }
     if (!zoneOrServer || zoneOrServer.trim().length < 3 || !/^\d+$/.test(zoneOrServer.trim())) {
@@ -212,12 +212,12 @@ function lookupAccountLocally(
   }
 
   if (product.inputType === 'game-id-server') {
-    if (trimmedId.length < 6) {
+    if (trimmedId.length < 12) {
       return {
         valid: false,
         accountName: '',
         source: 'auto-verifier',
-        message: 'UID minimal 6 karakter.'
+        message: 'UID minimal 12 karakter.'
       };
     }
     const idx = deterministicHash(`${productId}:${trimmedId}`);
@@ -231,12 +231,12 @@ function lookupAccountLocally(
   }
 
   // Standard game-id (Free Fire, PUBG, Roblox, CODM, Clash of Clans, Steam, etc.)
-  if (trimmedId.length < 4) {
+  if (trimmedId.length < 12) {
     return {
       valid: false,
       accountName: '',
       source: 'auto-verifier',
-      message: `${product.inputLabel} minimal 4 karakter.`
+      message: `${product.inputLabel} minimal 12 karakter.`
     };
   }
 
