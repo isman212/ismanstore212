@@ -1,0 +1,6 @@
+{
+  "name": "ismanstore212",
+  "description": "Website topup semua game, token listrik PLN, paket data, dan pulsa otomatis 24 jam dengan pengecekan nickname dan pembayaran instan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
