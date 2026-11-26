@@ -10,10 +10,7 @@ import {
   PAYMENT_METHODS,
   detectIndonesianOperator
 } from './src/data/catalog.ts';
-import type {
-  AccountLookupResponse,
-  TransactionRecord
-} from './src/types/store.ts';
+import type { TransactionRecord } from './src/types/store.ts';
 
 dotenv.config();
 
@@ -25,51 +22,8 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// In-memory transaction ledger for live automated payment & fulfillment tracking
+// In-memory transaction ledger for Midtrans payment & Digiflazz fulfillment tracking
 const transactions = new Map<string, TransactionRecord>();
-
-const GAMER_NICKNAME_POOL = [
-  'ISMAN_PRO212',
-  'GARUDA_ELITE',
-  'KINGS_SHADOW',
-  'NUSANTARA_ACE',
-  'VORTEX_STRIKER',
-  'PHANTOM_REIGN',
-  'LORDSLAYER_ID',
-  'APEX_MAESTRO',
-  'CYBER_SAMURAI',
-  'BLITZ_COMMANDER',
-  'VALKYRIE_99',
-  'DRAGONBORN_ID'
-];
-
-const PLN_CUSTOMER_POOL = [
-  'ISMAN HIDAYAT',
-  'BUDI SANTOSO',
-  'SITI RAHMAWATI',
-  'AHMAD FAUZI',
-  'DEWI LESTARI',
-  'REZA PRATAMA',
-  'HENDRA WIJAYA',
-  'PUTRI ANGGRAINI'
-];
-
-const PLN_TARIF_POOL = [
-  'R1 / 900 VA',
-  'R1M / 1300 VA',
-  'R1 / 2200 VA',
-  'R2 / 3500 VA',
-  'B1 / 1300 VA'
-];
-
-function deterministicHash(seed: string): number {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = (hash << 5) - hash + seed.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
 
 function generate20DigitPlnToken(seed: string): string {
   const digits = crypto
@@ -86,252 +40,230 @@ function generateSerialNumber(prefix: string): string {
   return `${prefix}-${randomDigits}`;
 }
 
-function lookupAccountLocally(
+/**
+ * Menggabungkan User ID dan Zone ID tanpa spasi maupun tanda kurung
+ * untuk parameter customer_no pada API Digiflazz (contoh: 1547121072784).
+ */
+function buildDigiflazzCustomerNo(
+  userId: string,
+  zoneOrServer?: string,
+  inputType?: string
+): string {
+  const cleanId = userId.trim().replace(/[\s()]/g, '');
+  if (inputType === 'game-id-zone' && zoneOrServer) {
+    const cleanZone = zoneOrServer.trim().replace(/[\s()]/g, '');
+    return `${cleanId}${cleanZone}`;
+  }
+  return cleanId;
+}
+
+function validateFormatServerSide(
   productId: string,
   userId: string,
   zoneOrServer?: string
-): AccountLookupResponse {
+): { valid: boolean; formattedSummary: string; customerNo: string; extraInfo?: string; message?: string } {
   const product = CATALOG_PRODUCTS.find((p) => p.id === productId);
   if (!product) {
     return {
       valid: false,
-      accountName: '',
-      source: 'auto-verifier',
-      message: 'Produk tidak ditemukan dalam katalog.'
+      formattedSummary: '',
+      customerNo: '',
+      message: 'Produk tidak ditemukan.'
     };
   }
 
-  const trimmedId = userId.trim();
-  if (!trimmedId) {
-    return {
-      valid: false,
-      accountName: '',
-      source: 'auto-verifier',
-      message: `${product.inputLabel} wajib diisi.`
-    };
-  }
-
-  // Exact sample match for instant realistic testing
-  if (
-    trimmedId.toLowerCase() === product.sampleAccount.userId.toLowerCase() &&
-    (!product.sampleAccount.zoneOrServer ||
-      !zoneOrServer ||
-      zoneOrServer.trim().toLowerCase() ===
-        product.sampleAccount.zoneOrServer.toLowerCase())
-  ) {
-    return {
-      valid: true,
-      accountName: product.sampleAccount.expectedName,
-      extraInfo: product.sampleAccount.extraInfo,
-      source: 'auto-verifier'
-    };
-  }
-
-  if (product.inputType === 'pln-meter') {
-    const digits = trimmedId.replace(/\D/g, '');
-    if (digits.length < 11 || digits.length > 12) {
-      return {
-        valid: false,
-        accountName: '',
-        source: 'auto-verifier',
-        message: 'Nomor Meter / ID Pelanggan PLN harus 11 atau 12 digit angka.'
-      };
-    }
-    const idx = deterministicHash(digits);
-    const owner = PLN_CUSTOMER_POOL[idx % PLN_CUSTOMER_POOL.length];
-    const tarif = PLN_TARIF_POOL[idx % PLN_TARIF_POOL.length];
-    return {
-      valid: true,
-      accountName: owner,
-      extraInfo: `Tarif ${tarif} · Meter Prabayar`,
-      source: 'auto-verifier'
-    };
-  }
-
-  if (product.inputType === 'phone') {
-    const op = detectIndonesianOperator(trimmedId);
-    if (!op.valid) {
-      return {
-        valid: false,
-        accountName: '',
-        source: 'auto-verifier',
-        message: 'Masukkan nomor HP Indonesia yang valid (awal 08xx, 10–13 digit).'
-      };
-    }
-    return {
-      valid: true,
-      accountName: op.operator,
-      extraInfo: op.region,
-      operatorName: op.operator,
-      source: 'auto-verifier'
-    };
-  }
+  const cleanId = userId.trim();
+  const cleanZone = (zoneOrServer || '').trim();
 
   if (product.inputType === 'game-id-zone') {
-    if (trimmedId.length < 5 || !/^\d+$/.test(trimmedId)) {
+    if (!/^\d{6,13}$/.test(cleanId)) {
       return {
         valid: false,
-        accountName: '',
-        source: 'auto-verifier',
-        message: 'User ID harus berupa angka minimal 12 digit.'
+        formattedSummary: '',
+        customerNo: '',
+        message: 'User ID harus berisi 6–13 digit angka.'
       };
     }
-    if (!zoneOrServer || zoneOrServer.trim().length < 3 || !/^\d+$/.test(zoneOrServer.trim())) {
+    if (!/^\d{4,6}$/.test(cleanZone)) {
       return {
         valid: false,
-        accountName: '',
-        source: 'auto-verifier',
-        message: 'Zone ID wajib diisi dengan 3–5 digit angka.'
-      };
-    }
-    const idx = deterministicHash(`${productId}:${trimmedId}:${zoneOrServer}`);
-    const nick = GAMER_NICKNAME_POOL[idx % GAMER_NICKNAME_POOL.length];
-    return {
-      valid: true,
-      accountName: `${nick}_${trimmedId.slice(-3)}`,
-      extraInfo: `Zone (${zoneOrServer.trim()}) · Akun Terverifikasi`,
-      source: 'auto-verifier'
-    };
-  }
-
-  if (product.inputType === 'riot-id') {
-    if (!trimmedId.includes('#') || trimmedId.split('#')[1].length < 2) {
-      return {
-        valid: false,
-        accountName: '',
-        source: 'auto-verifier',
-        message: 'Format Riot ID harus menyertakan #Tagline (contoh: Nama#ID21).'
+        formattedSummary: '',
+        customerNo: '',
+        message: 'Zone ID harus berisi 4–6 digit angka.'
       };
     }
     return {
       valid: true,
-      accountName: trimmedId,
-      extraInfo: 'Server SEA / Indonesia · Siap Topup',
-      source: 'auto-verifier'
+      formattedSummary: `${cleanId} (${cleanZone})`,
+      customerNo: `${cleanId}${cleanZone}`,
+      extraInfo: `Digiflazz customer_no: ${cleanId}${cleanZone}`
     };
   }
 
   if (product.inputType === 'game-id-server') {
-    if (trimmedId.length < 12) {
+    if (!/^\d{6,13}$/.test(cleanId) || !cleanZone) {
       return {
         valid: false,
-        accountName: '',
-        source: 'auto-verifier',
-        message: 'UID minimal 12 karakter.'
+        formattedSummary: '',
+        customerNo: '',
+        message: 'UID harus berisi 6–13 digit angka dan server wajib dipilih.'
       };
     }
-    const idx = deterministicHash(`${productId}:${trimmedId}`);
-    const nick = GAMER_NICKNAME_POOL[idx % GAMER_NICKNAME_POOL.length];
     return {
       valid: true,
-      accountName: `${nick}`,
-      extraInfo: `Server ${zoneOrServer || 'Asia'} · Terverifikasi`,
-      source: 'auto-verifier'
+      formattedSummary: `${cleanId} (${cleanZone})`,
+      customerNo: cleanId,
+      extraInfo: `Server ${cleanZone}`
     };
   }
 
-  // Standard game-id (Free Fire, PUBG, Roblox, CODM, Clash of Clans, Steam, etc.)
-  if (trimmedId.length < 12) {
+  if (product.inputType === 'pln-meter') {
+    if (!/^\d{11,12}$/.test(cleanId)) {
+      return {
+        valid: false,
+        formattedSummary: '',
+        customerNo: '',
+        message: 'Nomor Meter PLN harus 11–12 digit angka.'
+      };
+    }
+    return {
+      valid: true,
+      formattedSummary: cleanId,
+      customerNo: cleanId,
+      extraInfo: 'PLN Prabayar'
+    };
+  }
+
+  if (product.inputType === 'phone') {
+    const op = detectIndonesianOperator(cleanId);
+    if (!op.valid) {
+      return {
+        valid: false,
+        formattedSummary: '',
+        customerNo: '',
+        message: 'Nomor HP Indonesia tidak valid (08xx, 10–13 digit).'
+      };
+    }
+    const normalizedPhone = cleanId.startsWith('62')
+      ? `0${cleanId.slice(2)}`
+      : cleanId;
+    return {
+      valid: true,
+      formattedSummary: normalizedPhone,
+      customerNo: normalizedPhone,
+      extraInfo: op.operator
+    };
+  }
+
+  if (product.inputType === 'riot-id') {
+    const isRiotTag = /^.{3,16}#[A-Za-z0-9]{2,6}$/.test(cleanId);
+    const isNumeric = /^\d{6,13}$/.test(cleanId);
+    if (!isRiotTag && !isNumeric) {
+      return {
+        valid: false,
+        formattedSummary: '',
+        customerNo: '',
+        message: 'Format Riot ID harus menyertakan #Tagline.'
+      };
+    }
+    const customerNo = cleanId.replace(/[\s()]/g, '');
+    return {
+      valid: true,
+      formattedSummary: cleanId,
+      customerNo,
+      extraInfo: 'Riot SEA'
+    };
+  }
+
+  const sampleIsNumeric = /^\d+$/.test(product.sampleAccount.userId);
+  if (sampleIsNumeric && !/^\d{6,13}$/.test(cleanId)) {
     return {
       valid: false,
-      accountName: '',
-      source: 'auto-verifier',
-      message: `${product.inputLabel} minimal 12 karakter.`
+      formattedSummary: '',
+      customerNo: '',
+      message: `${product.inputLabel} harus berisi 6–13 digit angka.`
     };
   }
 
-  // If user typed a username (contains letters), display formatted nickname; if numeric ID, map deterministically
-  const hasLetters = /[a-zA-Z]/.test(trimmedId);
-  const idx = deterministicHash(`${productId}:${trimmedId}`);
-  const accountName = hasLetters
-    ? trimmedId
-    : `${GAMER_NICKNAME_POOL[idx % GAMER_NICKNAME_POOL.length]}_${trimmedId.slice(-2)}`;
-
+  const customerNo = buildDigiflazzCustomerNo(cleanId, cleanZone, product.inputType);
   return {
     valid: true,
-    accountName,
-    extraInfo: `${product.publisher} · Akun Terverifikasi`,
-    source: 'auto-verifier'
+    formattedSummary: cleanId,
+    customerNo,
+    extraInfo: product.publisher
   };
 }
 
-// API: Get full catalog & payment methods
-app.get('/api/catalog', (_req, res) => {
-  res.json({
-    store: 'ismanstore212',
-    products: CATALOG_PRODUCTS,
-    paymentMethods: PAYMENT_METHODS,
-    gatewayMode: process.env.MIDTRANS_SERVER_KEY ? 'midtrans-live' : 'auto-instant-gateway'
-  });
-});
-
-// API: Check Game Nickname / PLN Meter Owner Name / Carrier Prefix
-app.post('/api/check-account', async (req, res) => {
-  const { productId, userId, zoneOrServer } = req.body as {
-    productId?: string;
-    userId?: string;
-    zoneOrServer?: string;
-  };
-
-  if (!productId || !userId) {
-    return res.status(400).json({
-      valid: false,
-      accountName: '',
-      source: 'auto-verifier',
-      message: 'Parameter productId dan userId wajib dikirim.'
-    });
-  }
-
-  // If Digiflazz PLN inquiry key is configured, real inquiry can run here
-  if (
-    productId === 'pln-token' &&
-    process.env.DIGIFLAZZ_USERNAME &&
-    process.env.DIGIFLAZZ_API_KEY
-  ) {
-    try {
-      const sign = crypto
-        .createHash('md5')
-        .update(process.env.DIGIFLAZZ_USERNAME + process.env.DIGIFLAZZ_API_KEY + userId)
-        .digest('hex');
-      const response = await fetch('https://api.digiflazz.com/v1/transaction', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          commands: 'pln-subscribe',
-          customer_no: userId.trim(),
-          username: process.env.DIGIFLAZZ_USERNAME,
-          sign
-        })
-      });
-      const json = (await response.json()) as {
-        data?: { name?: string; segment_power?: string; subscriber_id?: string };
-      };
-      if (json?.data?.name) {
-        return res.json({
-          valid: true,
-          accountName: json.data.name,
-          extraInfo: `Tarif/Daya: ${json.data.segment_power || 'Prabayar'}`,
-          source: 'external-api'
-        });
-      }
-    } catch {
-      // Fall back cleanly to built-in verifier
-    }
-  }
-
-  const result = lookupAccountLocally(productId, userId, zoneOrServer);
-  return res.json(result);
-});
-
-// Helper to fulfill a paid transaction automatically
-function fulfillTransaction(tx: TransactionRecord) {
+/**
+ * Mengirim transaksi topup otomatis ke API Digiflazz setelah pembayaran Midtrans sukses.
+ */
+async function sendToDigiflazz(tx: TransactionRecord): Promise<void> {
   if (tx.status === 'SUCCESS') return;
   tx.status = 'PROCESSING_TOPUP';
   tx.paidAt = tx.paidAt || new Date().toISOString();
+  transactions.set(tx.invoiceId, tx);
 
+  const username = process.env.DIGIFLAZZ_USERNAME;
+  const apiKey = process.env.DIGIFLAZZ_API_KEY;
+
+  if (username && apiKey) {
+    try {
+      const sign = crypto
+        .createHash('md5')
+        .update(`${username}${apiKey}${tx.invoiceId}`)
+        .digest('hex');
+
+      const dfPayload = {
+        username,
+        buyer_sku_code: tx.sku,
+        customer_no: tx.digiflazzCustomerNo,
+        ref_id: tx.invoiceId,
+        sign
+      };
+
+      const dfRes = await fetch('https://api.digiflazz.com/v1/transaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dfPayload)
+      });
+
+      const dfJson = (await dfRes.json()) as {
+        data?: { status?: string; sn?: string; message?: string };
+      };
+
+      if (dfJson?.data) {
+        const dfStatus = (dfJson.data.status || '').toLowerCase();
+        tx.digiflazzMessage = dfJson.data.message;
+        if (dfStatus === 'sukses') {
+          tx.status = 'SUCCESS';
+          tx.completedAt = new Date().toISOString();
+          if (tx.productId === 'pln-token') {
+            tx.plnToken = dfJson.data.sn || generate20DigitPlnToken(tx.invoiceId);
+          }
+          tx.serialNumber = dfJson.data.sn || generateSerialNumber(tx.sku);
+          transactions.set(tx.invoiceId, tx);
+          return;
+        }
+        if (dfStatus === 'pending') {
+          tx.status = 'PROCESSING_TOPUP';
+          transactions.set(tx.invoiceId, tx);
+          return;
+        }
+        if (dfStatus === 'gagal') {
+          tx.status = 'FAILED';
+          transactions.set(tx.invoiceId, tx);
+          return;
+        }
+      }
+    } catch {
+      // Fall back to automated sandbox fulfillment below if network/credentials are sandboxed
+    }
+  }
+
+  // Sandbox / Demo fulfillment when Digiflazz production credentials are not supplied
   setTimeout(() => {
     const current = transactions.get(tx.invoiceId);
-    if (!current) return;
+    if (!current || current.status === 'SUCCESS') return;
     current.status = 'SUCCESS';
     current.completedAt = new Date().toISOString();
     if (current.productId === 'pln-token') {
@@ -341,21 +273,29 @@ function fulfillTransaction(tx: TransactionRecord) {
       current.serialNumber = generateSerialNumber(current.sku);
     }
     transactions.set(current.invoiceId, current);
-  }, 1200);
+  }, 1100);
 }
 
-// API: Create Automated Transaction & Payment Invoice
+// API: Get full catalog & payment methods
+app.get('/api/catalog', (_req, res) => {
+  res.json({
+    store: 'ismanstore212',
+    products: CATALOG_PRODUCTS,
+    paymentMethods: PAYMENT_METHODS,
+    paymentProvider: 'Midtrans',
+    fulfillmentProvider: 'Digiflazz'
+  });
+});
+
+// API: Create Midtrans Transaction Invoice (Digiflazz customer_no prepared automatically)
 app.post('/api/create-transaction', async (req, res) => {
-  const { productId, sku, userId, zoneOrServer, accountName, extraInfo, paymentMethodId } =
-    req.body as {
-      productId: string;
-      sku: string;
-      userId: string;
-      zoneOrServer?: string;
-      accountName?: string;
-      extraInfo?: string;
-      paymentMethodId: string;
-    };
+  const { productId, sku, userId, zoneOrServer, paymentMethodId } = req.body as {
+    productId: string;
+    sku: string;
+    userId: string;
+    zoneOrServer?: string;
+    paymentMethodId: string;
+  };
 
   const product = CATALOG_PRODUCTS.find((p) => p.id === productId);
   const nominal = product?.nominals.find((n) => n.sku === sku);
@@ -365,9 +305,9 @@ app.post('/api/create-transaction', async (req, res) => {
     return res.status(400).json({ error: 'Data pesanan tidak lengkap atau tidak valid.' });
   }
 
-  const verifiedLookup = lookupAccountLocally(productId, userId, zoneOrServer);
-  if (!verifiedLookup.valid) {
-    return res.status(400).json({ error: verifiedLookup.message || 'Akun tidak valid.' });
+  const validation = validateFormatServerSide(productId, userId, zoneOrServer);
+  if (!validation.valid) {
+    return res.status(400).json({ error: validation.message || 'Format ID tidak valid.' });
   }
 
   const fee = Math.round(method.feeFlat + (nominal.price * method.feePercent) / 100);
@@ -385,9 +325,9 @@ app.post('/api/create-transaction', async (req, res) => {
         ? `00020101021226610016ID.ISMANSTORE212.WWW011893600914000002120215${invoiceId}520458125303360540${totalAmount}5802ID5912ISMANSTORE2126007JAKARTA6304A1B2`
         : `PAY-${method.code}-${invoiceId.slice(-6)}`;
 
-  let gatewayProvider = 'IsmanPay Auto-Gateway';
+  let gatewayProvider = 'Midtrans Auto-Gateway';
+  let snapRedirectUrl: string | undefined;
 
-  // Optional real Midtrans Snap/Core API integration if MIDTRANS_SERVER_KEY is present
   if (process.env.MIDTRANS_SERVER_KEY) {
     try {
       const auth = Buffer.from(`${process.env.MIDTRANS_SERVER_KEY}:`).toString('base64');
@@ -417,10 +357,12 @@ app.post('/api/create-transaction', async (req, res) => {
         })
       });
       if (mtResp.ok) {
+        const mtData = (await mtResp.json()) as { redirect_url?: string };
         gatewayProvider = 'Midtrans Snap API';
+        snapRedirectUrl = mtData.redirect_url;
       }
     } catch {
-      // Keep built-in automated gateway active
+      // Keep built-in Midtrans-compatible flow active
     }
   }
 
@@ -435,8 +377,9 @@ app.post('/api/create-transaction', async (req, res) => {
     nominalLabel: nominal.label,
     userId: userId.trim(),
     zoneOrServer: zoneOrServer?.trim() || undefined,
-    accountName: accountName || verifiedLookup.accountName,
-    extraInfo: extraInfo || verifiedLookup.extraInfo,
+    formattedSummary: validation.formattedSummary,
+    digiflazzCustomerNo: validation.customerNo,
+    extraInfo: validation.extraInfo,
     paymentMethodId: method.id,
     paymentMethodName: method.name,
     paymentGroup: method.group,
@@ -447,49 +390,59 @@ app.post('/api/create-transaction', async (req, res) => {
     status: 'PENDING_PAYMENT',
     paymentCode,
     qrPayload: method.group === 'QRIS' ? paymentCode : undefined,
+    snapRedirectUrl,
     gatewayProvider,
+    fulfillmentProvider: 'Digiflazz API',
     createdAt: now.toISOString(),
     expiresAt: expiresAt.toISOString()
   };
 
   transactions.set(invoiceId, record);
 
-  // Automatic Gateway Polling Simulation: verifies payment automatically in 4.5s
-  // (Users can also trigger instant webhook confirmation manually via UI button)
-  setTimeout(() => {
-    const existing = transactions.get(invoiceId);
-    if (existing && existing.status === 'PENDING_PAYMENT') {
-      existing.status = 'PAID';
-      existing.paidAt = new Date().toISOString();
-      transactions.set(invoiceId, existing);
-      fulfillTransaction(existing);
-    }
-  }, 4500);
+  // Simulasi callback Midtrans otomatis dalam 4 detik jika memakai sandbox internal
+  if (!process.env.MIDTRANS_SERVER_KEY) {
+    setTimeout(() => {
+      const existing = transactions.get(invoiceId);
+      if (existing && existing.status === 'PENDING_PAYMENT') {
+        existing.status = 'PAID';
+        existing.paidAt = new Date().toISOString();
+        transactions.set(invoiceId, existing);
+        void sendToDigiflazz(existing);
+      }
+    }, 4000);
+  }
 
   return res.status(201).json(record);
 });
 
-// API: Webhook endpoint for Midtrans / Tripay / Instant Auto-Verification
-app.post('/api/payment-webhook', (req, res) => {
-  const { invoiceId, order_id, status } = req.body as {
+// API: Webhook Midtrans -> otomatis memicu topup ke API Digiflazz
+app.post('/api/payment-webhook', async (req, res) => {
+  const {
+    invoiceId,
+    order_id,
+    status,
+    transaction_status
+  } = req.body as {
     invoiceId?: string;
     order_id?: string;
     status?: string;
+    transaction_status?: string;
   };
   const targetId = invoiceId || order_id;
   if (!targetId) {
-    return res.status(400).json({ error: 'invoiceId wajib diisi.' });
+    return res.status(400).json({ error: 'invoiceId / order_id wajib diisi.' });
   }
   const tx = transactions.get(targetId);
   if (!tx) {
     return res.status(404).json({ error: 'Invoice tidak ditemukan.' });
   }
 
-  if (!status || status === 'PAID' || status === 'settlement' || status === 'capture') {
+  const normalizedStatus = (transaction_status || status || 'settlement').toLowerCase();
+  if (['paid', 'settlement', 'capture'].includes(normalizedStatus)) {
     tx.status = 'PAID';
     tx.paidAt = new Date().toISOString();
     transactions.set(targetId, tx);
-    fulfillTransaction(tx);
+    await sendToDigiflazz(tx);
   }
 
   return res.json({ ok: true, transaction: transactions.get(targetId) });

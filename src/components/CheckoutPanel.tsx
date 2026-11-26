@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2,
   Copy,
@@ -8,16 +8,16 @@ import {
   AlertCircle,
   Zap,
   ArrowRight,
-  RefreshCw,
+  ArrowDown,
   Receipt
 } from 'lucide-react';
 import type {
-  AccountLookupResponse,
   NominalOption,
   PaymentMethod,
   ProductItem,
   TransactionRecord
 } from '../types/store';
+import { validateAccountFormatLocally } from '../utils/validateAccountFormat';
 import { QrCodeMatrix } from './QrCodeMatrix';
 
 interface CheckoutPanelProps {
@@ -45,48 +45,31 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
     paymentMethods[0]
   );
 
-  const [lookupLoading, setLookupLoading] = useState(false);
-  const [lookupResult, setLookupResult] = useState<AccountLookupResponse | null>(
-    null
-  );
-
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [activeTx, setActiveTx] = useState<TransactionRecord | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number>(900);
 
+  const step2Ref = useRef<HTMLElement | null>(null);
+
   // Reset form cleanly when product changes
   useEffect(() => {
     setUserId('');
     setZoneOrServer(product.serverOptions?.[0] || '');
     setSelectedNominal(product.nominals[0]);
-    setLookupResult(null);
     setSubmitError(null);
     setActiveTx(null);
   }, [product]);
 
-  // Debounced automatic Nickname / Nama Meter / Operator Lookup
-  useEffect(() => {
-    const trimmed = userId.trim();
-    if (trimmed.length < 4) {
-      setLookupResult(null);
-      return;
-    }
+  // Validasi format lokal murni di sisi client (tanpa fetch / API pihak ketiga)
+  const validationResult = useMemo(() => {
+    const hasAnyInput = userId.trim().length > 0;
+    if (!hasAnyInput) return null;
+    return validateAccountFormatLocally(product, userId, zoneOrServer);
+  }, [product, userId, zoneOrServer]);
 
-    if (product.inputType === 'game-id-zone' && zoneOrServer.trim().length < 3) {
-      setLookupResult(null);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      void performLookup(trimmed, zoneOrServer);
-    }, 380);
-
-    return () => clearTimeout(timer);
-  }, [userId, zoneOrServer, product.id]);
-
-  // Poll live automated payment & topup fulfillment status
+  // Poll live Midtrans payment & Digiflazz fulfillment status
   useEffect(() => {
     if (!activeTx || activeTx.status === 'SUCCESS' || activeTx.status === 'FAILED') {
       return;
@@ -101,7 +84,7 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
           onTransactionSaved(updated);
         }
       } catch {
-        // Ignore transient network errors during poll
+        // Ignore transient errors while polling
       }
     }, 1200);
 
@@ -123,41 +106,15 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
     return () => clearInterval(timer);
   }, [activeTx?.invoiceId, activeTx?.status, activeTx?.expiresAt]);
 
-  async function performLookup(idToCheck: string, zoneToCheck: string) {
-    setLookupLoading(true);
-    try {
-      const res = await fetch('/api/check-account', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          productId: product.id,
-          userId: idToCheck,
-          zoneOrServer: zoneToCheck
-        })
-      });
-      const data = (await res.json()) as AccountLookupResponse;
-      setLookupResult(data);
-    } catch {
-      setLookupResult({
-        valid: false,
-        accountName: '',
-        source: 'auto-verifier',
-        message: 'Gagal terhubung ke layanan cek akun.'
-      });
-    } finally {
-      setLookupLoading(false);
-    }
-  }
-
   function handleFillSample() {
     setUserId(product.sampleAccount.userId);
     if (product.sampleAccount.zoneOrServer) {
       setZoneOrServer(product.sampleAccount.zoneOrServer);
     }
-    void performLookup(
-      product.sampleAccount.userId,
-      product.sampleAccount.zoneOrServer || ''
-    );
+  }
+
+  function handleContinueToStep2() {
+    step2Ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   const fee = useMemo(() => {
@@ -170,7 +127,7 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
   const totalEstimate = selectedNominal.price + fee;
 
   async function handleCreateTransaction() {
-    if (!lookupResult?.valid) return;
+    if (!validationResult?.valid) return;
     setIsSubmitting(true);
     setSubmitError(null);
 
@@ -183,21 +140,19 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
           sku: selectedNominal.sku,
           userId: userId.trim(),
           zoneOrServer: zoneOrServer.trim() || undefined,
-          accountName: lookupResult.accountName,
-          extraInfo: lookupResult.extraInfo,
           paymentMethodId: selectedMethod.id
         })
       });
       const data = await res.json();
       if (!res.ok) {
-        setSubmitError(data.error || 'Gagal membuat transaksi otomatis.');
+        setSubmitError(data.error || 'Gagal membuat transaksi Midtrans.');
         return;
       }
       const tx = data as TransactionRecord;
       setActiveTx(tx);
       onTransactionSaved(tx);
     } catch {
-      setSubmitError('Koneksi ke server pembayaran gagal. Silakan coba lagi.');
+      setSubmitError('Koneksi ke server Midtrans gagal. Silakan coba lagi.');
     } finally {
       setIsSubmitting(false);
     }
@@ -211,7 +166,7 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           invoiceId: activeTx.invoiceId,
-          status: 'settlement'
+          transaction_status: 'settlement'
         })
       });
       if (res.ok) {
@@ -240,6 +195,7 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
 
   if (activeTx) {
     const isSuccess = activeTx.status === 'SUCCESS';
+    const isFailed = activeTx.status === 'FAILED';
     const isProcessing =
       activeTx.status === 'PAID' || activeTx.status === 'PROCESSING_TOPUP';
 
@@ -248,7 +204,8 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-white/10">
           <div>
             <p className="text-xs text-slate-400">
-              Invoice Transaksi Otomatis · {activeTx.gatewayProvider}
+              Invoice Otomatis · {activeTx.gatewayProvider} →{' '}
+              {activeTx.fulfillmentProvider}
             </p>
             <div className="flex items-center gap-3 mt-1">
               <h3 className="font-mono text-xl font-bold text-slate-50">
@@ -278,16 +235,21 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
             {isSuccess ? (
               <span className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-400">
                 <CheckCircle2 className="w-4 h-4" />
-                Topup Berhasil Terkirim
+                Topup Berhasil Terkirim via Digiflazz
+              </span>
+            ) : isFailed ? (
+              <span className="inline-flex items-center gap-2 text-sm font-semibold text-red-400">
+                <AlertCircle className="w-4 h-4" />
+                Pengiriman Digiflazz Gagal
               </span>
             ) : isProcessing ? (
               <span className="inline-flex items-center gap-2 text-sm font-semibold text-amber-400">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Mengirim Produk ke Akun Tujuan...
+                Mengirim ke Digiflazz (customer_no: {activeTx.digiflazzCustomerNo})...
               </span>
             ) : (
               <span className="inline-flex items-center gap-2 text-sm font-medium text-amber-300 font-mono">
-                Menunggu Pembayaran · {formatCountdown(remainingSeconds)}
+                Menunggu Pembayaran Midtrans · {formatCountdown(remainingSeconds)}
               </span>
             )}
           </div>
@@ -307,11 +269,11 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
             </div>
             <div>
               <div className="text-sm font-semibold text-slate-100">
-                Pembayaran Gateway
+                Pembayaran Midtrans
               </div>
               <div className="text-xs text-slate-400">
                 {activeTx.status === 'PENDING_PAYMENT'
-                  ? 'Verifikasi otomatis aktif'
+                  ? 'Menunggu pelunasan'
                   : 'Pembayaran lunas'}
               </div>
             </div>
@@ -324,21 +286,19 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
                   ? 'bg-amber-500 text-slate-950'
                   : isSuccess
                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    : 'bg-white/5 text-slate-400 border border-white/10'
+                    : isFailed
+                      ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                      : 'bg-white/5 text-slate-400 border border-white/10'
               }`}
             >
               2
             </div>
             <div>
               <div className="text-sm font-semibold text-slate-100">
-                Proses Server Provider
+                Kirim ke Digiflazz API
               </div>
-              <div className="text-xs text-slate-400">
-                {isProcessing
-                  ? 'Injeksi otomatis berjalan'
-                  : isSuccess
-                    ? 'Terproses instan'
-                    : 'Menunggu pelunasan'}
+              <div className="text-xs font-mono text-slate-400">
+                {activeTx.digiflazzCustomerNo}
               </div>
             </div>
           </div>
@@ -348,19 +308,23 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
               className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-mono font-bold ${
                 isSuccess
                   ? 'bg-emerald-500 text-slate-950'
-                  : 'bg-white/5 text-slate-400 border border-white/10'
+                  : isFailed
+                    ? 'bg-red-500 text-white'
+                    : 'bg-white/5 text-slate-400 border border-white/10'
               }`}
             >
               3
             </div>
             <div>
               <div className="text-sm font-semibold text-slate-100">
-                Pesanan Selesai
+                {isFailed ? 'Status Gagal' : 'Pesanan Selesai'}
               </div>
               <div className="text-xs text-slate-400">
                 {isSuccess
                   ? 'SN / Token tersedia'
-                  : 'Otomatis masuk ke akun'}
+                  : isFailed
+                    ? activeTx.digiflazzMessage || 'Periksa respon Digiflazz'
+                    : 'Otomatis masuk ke akun'}
               </div>
             </div>
           </div>
@@ -369,7 +333,31 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-6">
           {/* Left: Payment QRIS / VA or Delivered Token/SN */}
           <div>
-            {isSuccess ? (
+            {isFailed ? (
+              <div className="bg-[#090B10] border border-red-500/35 rounded-xl p-6">
+                <div className="flex items-center gap-2.5 text-red-400 font-semibold mb-3">
+                  <AlertCircle className="w-5 h-5" />
+                  <span>Respon Digiflazz: Gagal Diproses</span>
+                </div>
+                <p className="text-sm text-slate-300 mb-3">
+                  Transaksi <strong className="font-mono text-white">{activeTx.invoiceId}</strong>{' '}
+                  ke <strong className="font-mono text-amber-300">customer_no: {activeTx.digiflazzCustomerNo}</strong>{' '}
+                  mendapat status gagal dari Digiflazz.
+                </p>
+                {activeTx.digiflazzMessage && (
+                  <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/25 text-xs font-mono text-red-200 mb-4">
+                    {activeTx.digiflazzMessage}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setActiveTx(null)}
+                  className="px-4 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-semibold text-sm hover:bg-amber-400 transition-colors cursor-pointer"
+                >
+                  Buat Transaksi Baru
+                </button>
+              </div>
+            ) : isSuccess ? (
               <div className="bg-[#090B10] border border-emerald-500/30 rounded-xl p-6">
                 <div className="flex items-center gap-2.5 text-emerald-400 font-semibold mb-3">
                   <CheckCircle2 className="w-5 h-5" />
@@ -377,7 +365,8 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
                 </div>
                 <p className="text-sm text-slate-300 mb-5">
                   Item <strong className="text-white">{activeTx.nominalLabel}</strong>{' '}
-                  untuk <strong className="text-white">{activeTx.accountName}</strong>{' '}
+                  untuk ID <strong className="font-mono text-white">{activeTx.formattedSummary}</strong>{' '}
+                  (customer_no Digiflazz: <strong className="font-mono text-amber-300">{activeTx.digiflazzCustomerNo}</strong>)
                   telah berhasil dikirim.
                 </p>
 
@@ -410,7 +399,7 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
                 ) : (
                   <div className="bg-[#11151E] border border-white/10 rounded-xl p-4 mb-4">
                     <div className="text-xs text-slate-400 mb-1">
-                      Nomor Referensi / Serial Number (SN)
+                      Nomor Referensi / Serial Number (SN) Digiflazz
                     </div>
                     <div className="flex items-center justify-between gap-3">
                       <span className="font-mono text-sm font-semibold text-slate-100">
@@ -452,7 +441,7 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
                 {activeTx.qrPayload ? (
                   <>
                     <div className="text-sm font-semibold text-slate-100 mb-1">
-                      Scan QRIS Otomatis
+                      Scan QRIS Midtrans Otomatis
                     </div>
                     <p className="text-xs text-slate-400 mb-4">
                       Berlaku untuk DANA, GoPay, OVO, ShopeePay &amp; semua M-Banking
@@ -462,7 +451,7 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
                 ) : (
                   <div className="w-full py-4">
                     <div className="text-xs text-slate-400 mb-1">
-                      Nomor Pembayaran / Virtual Account
+                      Nomor Pembayaran / Virtual Account Midtrans
                     </div>
                     <div className="font-mono text-2xl font-bold text-amber-400 tracking-wide my-2">
                       {activeTx.paymentCode}
@@ -487,11 +476,23 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
                   </div>
                 )}
 
+                {activeTx.snapRedirectUrl && (
+                  <a
+                    href={activeTx.snapRedirectUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full mt-4 py-2.5 px-4 rounded-xl bg-amber-500 text-slate-950 font-semibold text-xs hover:bg-amber-400 transition-colors inline-flex items-center justify-center gap-2"
+                  >
+                    Buka Halaman Pembayaran Midtrans Snap
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </a>
+                )}
+
                 <div className="w-full mt-5 pt-4 border-t border-white/10 flex flex-col gap-2.5">
                   <div className="flex items-center justify-center gap-2 text-xs text-slate-400">
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
                     <span>
-                      Sistem mengecek mutasi pembayaran otomatis setiap detik...
+                      Menunggu konfirmasi Midtrans &amp; auto-kirim ke Digiflazz...
                     </span>
                   </div>
                   {activeTx.status === 'PENDING_PAYMENT' && (
@@ -500,7 +501,7 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
                       onClick={handleInstantWebhookConfirm}
                       className="w-full py-2.5 px-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold hover:bg-emerald-500/25 transition-colors cursor-pointer"
                     >
-                      Simulasi / Trigger Webhook Lunas Sekarang
+                      Simulasi / Trigger Webhook Midtrans Lunas
                     </button>
                   )}
                 </div>
@@ -520,34 +521,25 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
               </span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-slate-400">Nominal</span>
+              <span className="text-slate-400">Nominal / SKU</span>
               <span className="font-medium text-slate-100 text-right">
-                {activeTx.nominalLabel}
+                {activeTx.nominalLabel} ({activeTx.sku})
               </span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-slate-400">ID / Nomor Tujuan</span>
+              <span className="text-slate-400">Ringkasan ID Tujuan</span>
               <span className="font-mono text-slate-100 text-right">
-                {activeTx.userId}
-                {activeTx.zoneOrServer ? ` (${activeTx.zoneOrServer})` : ''}
+                {activeTx.formattedSummary}
               </span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-slate-400">Nickname / Nama Meter</span>
-              <span className="font-semibold text-emerald-400 text-right">
-                {activeTx.accountName}
+              <span className="text-slate-400">Digiflazz customer_no</span>
+              <span className="font-mono font-semibold text-emerald-400 text-right">
+                {activeTx.digiflazzCustomerNo}
               </span>
             </div>
-            {activeTx.extraInfo && (
-              <div className="flex justify-between gap-4">
-                <span className="text-slate-400">Info Akun / Tarif</span>
-                <span className="text-slate-300 text-right">
-                  {activeTx.extraInfo}
-                </span>
-              </div>
-            )}
             <div className="flex justify-between gap-4">
-              <span className="text-slate-400">Metode Bayar</span>
+              <span className="text-slate-400">Metode Bayar (Midtrans)</span>
               <span className="text-slate-100 text-right">
                 {activeTx.paymentMethodName}
               </span>
@@ -560,7 +552,7 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Biaya Gateway</span>
+                <span className="text-slate-400">Biaya Gateway Midtrans</span>
                 <span className="font-mono text-slate-200">
                   {formatIDR(activeTx.fee)}
                 </span>
@@ -590,12 +582,12 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       {/* Left 7 Columns: 3-Step Input Form */}
       <div className="lg:col-span-7 space-y-6">
-        {/* Step 1: Account ID + Auto Nickname / PLN Meter Name */}
+        {/* Step 1: Local Format Validation (Client-Side Only, No External API) */}
         <section className="bg-[#11151E] border border-white/10 rounded-2xl p-6">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div>
               <span className="text-xs font-mono text-amber-400">
-                Langkah 01 · Verifikasi Otomatis
+                Langkah 01 · Validasi Format Lokal
               </span>
               <h3 className="font-display text-lg font-bold text-slate-50">
                 Masukkan Data Akun — {product.name}
@@ -628,6 +620,14 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
               <input
                 id="checkout-userid"
                 type="text"
+                inputMode={
+                  product.inputType === 'game-id-zone' ||
+                  product.inputType === 'game-id-server' ||
+                  product.inputType === 'pln-meter' ||
+                  product.inputType === 'phone'
+                    ? 'numeric'
+                    : 'text'
+                }
                 value={userId}
                 onChange={(e) => setUserId(e.target.value)}
                 placeholder={product.inputPlaceholder}
@@ -641,14 +641,15 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
                   htmlFor="checkout-zone"
                   className="block text-xs font-medium text-slate-300 mb-1.5"
                 >
-                  {product.zoneLabel || 'Zone ID'}
+                  {product.zoneLabel || 'Zone ID (4–6 Digit Angka)'}
                 </label>
                 <input
                   id="checkout-zone"
                   type="text"
+                  inputMode="numeric"
                   value={zoneOrServer}
                   onChange={(e) => setZoneOrServer(e.target.value)}
-                  placeholder={product.zonePlaceholder || '2124'}
+                  placeholder={product.zonePlaceholder || 'Contoh: 2784'}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#171C28] border border-white/10 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-500 font-mono"
                 />
               </div>
@@ -679,76 +680,68 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
               )}
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-slate-400">{product.helperText}</p>
-            <button
-              type="button"
-              onClick={() => void performLookup(userId, zoneOrServer)}
-              disabled={!userId.trim() || lookupLoading}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-400 hover:text-amber-300 disabled:opacity-40 cursor-pointer shrink-0"
-            >
-              <RefreshCw
-                className={`w-3.5 h-3.5 ${lookupLoading ? 'animate-spin' : ''}`}
-              />
-              Cek Ulang Akun
-            </button>
-          </div>
+          <p className="mt-3 text-xs text-slate-400">{product.helperText}</p>
 
-          {/* Automatic Nickname / Meter Name Verification Box */}
-          {lookupLoading && (
-            <div className="mt-4 px-4 py-3 rounded-xl bg-[#171C28] border border-white/10 flex items-center gap-2.5 text-sm text-slate-300">
-              <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-              <span>Memeriksa nickname / data pelanggan otomatis...</span>
-            </div>
-          )}
-
-          {!lookupLoading && lookupResult && (
+          {/* Local Format Validation Status Box (Client-Side Only) */}
+          {validationResult && (
             <div
-              className={`mt-4 px-4 py-3.5 rounded-xl border flex items-start gap-3 ${
-                lookupResult.valid
-                  ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-100'
+              className={`mt-4 px-4 py-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                validationResult.valid
+                  ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-100'
                   : 'bg-red-500/10 border-red-500/35 text-red-200'
               }`}
             >
-              {lookupResult.valid ? (
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-              ) : (
-                <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-              )}
-              <div className="text-sm">
-                {lookupResult.valid ? (
-                  <>
-                    <div className="text-xs text-emerald-300 font-medium">
-                      {product.inputType === 'pln-meter'
-                        ? 'Nama Pemilik Meter Terbaca Otomatis'
-                        : product.inputType === 'phone'
-                          ? 'Operator Seluler Terdeteksi Otomatis'
-                          : 'Nickname Game Terbaca Otomatis'}
-                    </div>
-                    <div className="font-display font-bold text-base text-white mt-0.5">
-                      {lookupResult.accountName}
-                    </div>
-                    {lookupResult.extraInfo && (
-                      <div className="text-xs text-emerald-200/80 mt-0.5">
-                        {lookupResult.extraInfo}
-                      </div>
-                    )}
-                  </>
+              <div className="flex items-start gap-3">
+                {validationResult.valid ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
                 ) : (
-                  <div>
-                    <div className="font-semibold">Data belum valid</div>
-                    <div className="text-xs opacity-90 mt-0.5">
-                      {lookupResult.message}
-                    </div>
-                  </div>
+                  <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
                 )}
+                <div className="text-sm">
+                  {validationResult.valid ? (
+                    <>
+                      <div className="font-semibold text-emerald-300">
+                        Format ID Valid (Siap Diproses)
+                      </div>
+                      <div className="font-mono font-bold text-base text-white mt-0.5">
+                        {validationResult.formattedSummary}
+                      </div>
+                      {validationResult.extraInfo && (
+                        <div className="text-xs text-emerald-200/80 mt-0.5 font-mono">
+                          {validationResult.extraInfo}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div>
+                      <div className="font-semibold">Format ID Belum Sesuai</div>
+                      <div className="text-xs opacity-90 mt-0.5">
+                        {validationResult.message}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {validationResult.valid && (
+                <button
+                  type="button"
+                  onClick={handleContinueToStep2}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-semibold text-xs hover:bg-emerald-400 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  Lanjut ke Langkah 02
+                  <ArrowDown className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           )}
         </section>
 
         {/* Step 2: Pilihan Nominal */}
-        <section className="bg-[#11151E] border border-white/10 rounded-2xl p-6">
+        <section
+          ref={step2Ref}
+          className="bg-[#11151E] border border-white/10 rounded-2xl p-6"
+        >
           <div className="mb-4">
             <span className="text-xs font-mono text-amber-400">
               Langkah 02 · {product.currencyName}
@@ -798,11 +791,11 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
           </div>
         </section>
 
-        {/* Step 3: Pembayaran Otomatis */}
+        {/* Step 3: Pembayaran Otomatis Midtrans */}
         <section className="bg-[#11151E] border border-white/10 rounded-2xl p-6">
           <div className="mb-4">
             <span className="text-xs font-mono text-amber-400">
-              Langkah 03 · Payment Gateway API
+              Langkah 03 · Midtrans Payment Gateway → Digiflazz
             </span>
             <h3 className="font-display text-lg font-bold text-slate-50">
               Pilih Metode Pembayaran Otomatis
@@ -847,7 +840,7 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
                       {formatIDR(totalWithFee)}
                     </div>
                     <div className="text-[11px] text-slate-400">
-                      Cek Otomatis
+                      Midtrans Otomatis
                     </div>
                   </div>
                 </button>
@@ -876,26 +869,33 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
 
         <div className="py-5 space-y-3 text-sm border-b border-white/10">
           <div className="flex justify-between gap-4">
-            <span className="text-slate-400">ID / Nomor Tujuan</span>
+            <span className="text-slate-400">Ringkasan ID Tujuan</span>
             <span className="font-mono text-slate-100 text-right">
-              {userId.trim()
-                ? `${userId.trim()}${
-                    zoneOrServer ? ` (${zoneOrServer})` : ''
-                  }`
-                : 'Belum diisi'}
+              {validationResult?.valid
+                ? validationResult.formattedSummary
+                : userId.trim() || 'Belum diisi'}
             </span>
           </div>
 
           <div className="flex justify-between gap-4">
-            <span className="text-slate-400">Nickname / Nama</span>
+            <span className="text-slate-400">Validasi Format</span>
             <span
               className={`font-semibold text-right ${
-                lookupResult?.valid ? 'text-emerald-400' : 'text-slate-500'
+                validationResult?.valid ? 'text-emerald-400' : 'text-slate-500'
               }`}
             >
-              {lookupResult?.valid
-                ? lookupResult.accountName
-                : 'Menunggu verifikasi ID'}
+              {validationResult?.valid
+                ? 'Format ID Valid (Siap Diproses)'
+                : 'Menunggu format valid'}
+            </span>
+          </div>
+
+          <div className="flex justify-between gap-4">
+            <span className="text-slate-400">Digiflazz customer_no</span>
+            <span className="font-mono text-amber-300 text-right">
+              {validationResult?.valid
+                ? validationResult.digiflazzCustomerNo
+                : '-'}
             </span>
           </div>
 
@@ -922,7 +922,7 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-slate-400">Biaya Gateway Otomatis</span>
+            <span className="text-slate-400">Biaya Gateway Midtrans</span>
             <span className="font-mono text-slate-200">{formatIDR(fee)}</span>
           </div>
           <div className="flex justify-between pt-3 border-t border-white/10 items-baseline">
@@ -942,13 +942,13 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
         <button
           type="button"
           onClick={handleCreateTransaction}
-          disabled={!lookupResult?.valid || isSubmitting}
+          disabled={!validationResult?.valid || isSubmitting}
           className="w-full py-3.5 px-5 rounded-xl bg-amber-500 text-slate-950 font-bold text-sm hover:bg-amber-400 disabled:opacity-45 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 cursor-pointer"
         >
           {isSubmitting ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              Membuat Invoice Otomatis...
+              Membuat Invoice Midtrans...
             </>
           ) : (
             <>
@@ -962,7 +962,7 @@ export const CheckoutPanel: React.FC<CheckoutPanelProps> = ({
         <div className="mt-4 flex items-center justify-center gap-2 text-xs text-slate-400">
           <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>
-            Verifikasi ID &amp; pengiriman produk berjalan otomatis 24 jam
+            Pembayaran Midtrans otomatis diteruskan ke Digiflazz 24 jam
           </span>
         </div>
       </aside>

@@ -18,16 +18,16 @@ export const CATALOG_PRODUCTS: ProductItem[] = [
     accentColor: '#F59E0B',
     popular: true,
     inputType: 'game-id-zone',
-    inputLabel: 'User ID',
-    inputPlaceholder: 'Contoh: 123456789',
-    zoneLabel: 'Zone ID',
-    zonePlaceholder: 'Contoh: 2124',
-    helperText: 'Buka profil game MLBB Anda, salin angka User ID dan 4 digit Zone ID di dalam tanda kurung.',
+    inputLabel: 'User ID (6–13 Digit Angka)',
+    inputPlaceholder: 'Contoh: 154712107',
+    zoneLabel: 'Zone ID (4–6 Digit Angka)',
+    zonePlaceholder: 'Contoh: 2784',
+    helperText: 'Masukkan 6–13 digit angka User ID dan 4–6 digit angka Zone ID. Digiflazz otomatis menggabungkan keduanya saat pengiriman.',
     sampleAccount: {
-      userId: '184920112',
-      zoneOrServer: '2124',
-      expectedName: 'ISMAN_PRO212',
-      extraInfo: 'Server Asia · Mythic Honor'
+      userId: '154712107',
+      zoneOrServer: '2784',
+      expectedName: '154712107 (2784)',
+      extraInfo: 'Digiflazz customer_no: 1547121072784'
     },
     nominals: [
       { sku: 'ML-12', label: '12 Diamonds', bonus: '11 + 1 Bonus', price: 3600 },

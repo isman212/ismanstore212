@@ -49,12 +49,11 @@ export interface PaymentMethod {
   description: string;
 }
 
-export interface AccountLookupResponse {
+export interface LocalValidationResult {
   valid: boolean;
-  accountName: string;
+  formattedSummary: string;
+  digiflazzCustomerNo: string;
   extraInfo?: string;
-  operatorName?: string;
-  source: 'external-api' | 'auto-verifier';
   message?: string;
 }
 
@@ -73,7 +72,8 @@ export interface TransactionRecord {
   nominalLabel: string;
   userId: string;
   zoneOrServer?: string;
-  accountName: string;
+  formattedSummary: string;
+  digiflazzCustomerNo: string;
   extraInfo?: string;
   paymentMethodId: string;
   paymentMethodName: string;
@@ -85,9 +85,12 @@ export interface TransactionRecord {
   status: TransactionStatus;
   paymentCode: string;
   qrPayload?: string;
+  snapRedirectUrl?: string;
   serialNumber?: string;
   plnToken?: string;
+  digiflazzMessage?: string;
   gatewayProvider: string;
+  fulfillmentProvider: string;
   createdAt: string;
   paidAt?: string;
   completedAt?: string;

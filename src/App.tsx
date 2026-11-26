@@ -194,9 +194,9 @@ export default function App() {
                   Topup Semua Game, Token Listrik &amp; Pulsa dalam Hitungan Detik
                 </h1>
                 <p className="mt-4 text-base text-slate-300 max-w-xl leading-relaxed">
-                  Masukkan ID Game, Nomor Meter PLN, atau Nomor HP. Nickname akun
-                  dan nama pemilik meter terbaca otomatis sebelum pembayaran QRIS
-                  dan Virtual Account diproses instan oleh sistem.
+                  Masukkan ID Game, Nomor Meter PLN, atau Nomor HP. Sistem
+                  memvalidasi format ID langsung di perangkat Anda dan memproses
+                  pembayaran otomatis melalui Midtrans lalu mengirim ke Digiflazz.
                 </p>
 
                 {/* Quick Service Shortcut Buttons */}
@@ -244,7 +244,7 @@ export default function App() {
                   <span aria-hidden="true">·</span>
                   <span className="inline-flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                    Cek Nickname &amp; Meter PLN Akurat
+                    Midtrans &amp; Digiflazz Otomatis
                   </span>
                   <span aria-hidden="true">·</span>
                   <span className="inline-flex items-center gap-2">
@@ -415,7 +415,7 @@ export default function App() {
               </h2>
             </div>
             <p className="text-xs sm:text-sm text-slate-400">
-              Cek Nickname / Nama Meter otomatis sebelum pembayaran diproses
+              Validasi format ID lokal sebelum pembayaran Midtrans &amp; kirim ke Digiflazz
             </p>
           </div>
 

@@ -135,7 +135,11 @@ export const TransactionTrackerModal: React.FC<
                 {foundTx.productName} · {foundTx.nominalLabel}
               </div>
               <div className="text-xs text-slate-400">
-                Akun: {foundTx.accountName} ({foundTx.userId}) · Total:{' '}
+                ID Tujuan: {foundTx.formattedSummary} · Digiflazz:{' '}
+                <span className="font-mono text-slate-200">
+                  {foundTx.digiflazzCustomerNo}
+                </span>{' '}
+                · Total:{' '}
                 <span className="font-mono text-slate-200">
                   {formatIDR(foundTx.totalAmount)}
                 </span>
@@ -178,7 +182,11 @@ export const TransactionTrackerModal: React.FC<
                         </span>
                       </div>
                       <div className="text-xs text-slate-400 mt-0.5">
-                        {item.nominalLabel} · {item.accountName}
+                        {item.nominalLabel} · {item.formattedSummary} (
+                        <span className="font-mono">
+                          {item.digiflazzCustomerNo}
+                        </span>
+                        )
                       </div>
                       {item.plnToken && (
                         <div className="font-mono text-xs text-amber-400 mt-1">

@@ -81,6 +81,7 @@ export function generateSingleFileHtml(): string {
     .btn-primary { background: var(--accent); color: #090b10; }
     .btn-primary:hover { background: var(--accent-hover); }
     .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-success { background: var(--success); color: #090b10; padding: 8px 14px; font-size: 12px; }
     .btn-secondary { background: var(--surface-2); color: var(--text); border-color: var(--border); }
     .btn-secondary:hover { border-color: rgba(255,255,255,0.2); }
 
@@ -138,10 +139,11 @@ export function generateSingleFileHtml(): string {
     .field input:focus, .field select:focus { border-color: var(--accent); }
     .helper { font-size: 12px; color: var(--muted); margin-top: 8px; }
     .verify-box {
-      margin-top: 12px; padding: 12px 14px; border-radius: 10px; font-size: 13px;
+      margin-top: 12px; padding: 14px; border-radius: 12px; font-size: 13px;
       border: 1px solid var(--border); background: var(--surface-2);
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
     }
-    .verify-box.ok { border-color: rgba(16, 185, 129, 0.45); background: rgba(16, 185, 129, 0.08); color: #a7f3d0; }
+    .verify-box.ok { border-color: rgba(16, 185, 129, 0.45); background: rgba(16, 185, 129, 0.1); color: #a7f3d0; }
     .verify-box.err { border-color: rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.08); color: #fecaca; }
 
     /* Nominals & Payments */
@@ -220,14 +222,14 @@ export function generateSingleFileHtml(): string {
         <div>
           <h1>Topup Semua Game, Token Listrik &amp; Pulsa Otomatis 24 Jam</h1>
           <p>
-            Pengecekan Nickname Game &amp; Nama Pemilik Meter PLN secara otomatis sebelum bayar.
-            Terintegrasi dengan Payment Gateway &amp; Provider API untuk pengiriman instan 1–3 detik.
+            Validasi format ID lokal langsung di perangkat Anda tanpa API pihak ketiga.
+            Pembayaran otomatis melalui Midtrans &amp; pengiriman instan langsung ke Digiflazz API.
           </p>
           <div class="hero-meta">
             <span>24+ Game Populer</span> ·
             <span>Token PLN Prabayar</span> ·
             <span>Paket Data &amp; Pulsa All Operator</span> ·
-            <span>QRIS &amp; Virtual Account Otomatis</span>
+            <span>Midtrans + Digiflazz Otomatis</span>
           </div>
         </div>
         <div class="hero-card">
@@ -263,7 +265,7 @@ export function generateSingleFileHtml(): string {
       <div>
         <div class="panel">
           <div class="panel-title">
-            <span id="selected-product-title">1. Lengkapi Data Akun</span>
+            <span id="selected-product-title">01. Validasi Format Lokal — Data Akun</span>
             <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="fillSample()">Isi Contoh ID</button>
           </div>
           <div id="account-fields"></div>
@@ -271,13 +273,13 @@ export function generateSingleFileHtml(): string {
           <div id="account-status" class="verify-box" style="display:none;"></div>
         </div>
 
-        <div class="panel">
-          <div class="panel-title"><span>2. Pilih Nominal Topup</span></div>
+        <div class="panel" id="step-2-panel">
+          <div class="panel-title"><span>02. Pilih Nominal Topup</span></div>
           <div class="nominal-grid" id="nominal-grid"></div>
         </div>
 
         <div class="panel">
-          <div class="panel-title"><span>3. Pilih Pembayaran Otomatis (API Gateway)</span></div>
+          <div class="panel-title"><span>03. Pilih Pembayaran Otomatis (Midtrans)</span></div>
           <div class="pay-list" id="payment-list"></div>
         </div>
       </div>
@@ -285,18 +287,19 @@ export function generateSingleFileHtml(): string {
       <aside class="panel" style="position:sticky;top:88px;">
         <div class="panel-title"><span>Ringkasan Pesanan</span></div>
         <div class="summary-row"><span>Produk</span><strong id="sum-product" style="color:var(--text);">-</strong></div>
-        <div class="summary-row"><span>ID / Nomor Tujuan</span><span id="sum-id" class="mono">-</span></div>
-        <div class="summary-row"><span>Nickname / Nama Meter</span><span id="sum-name" style="color:var(--success);">-</span></div>
+        <div class="summary-row"><span>Ringkasan ID Tujuan</span><span id="sum-id" class="mono">-</span></div>
+        <div class="summary-row"><span>Status Format</span><span id="sum-status" style="color:var(--success);">-</span></div>
+        <div class="summary-row"><span>Digiflazz customer_no</span><span id="sum-df" class="mono" style="color:var(--accent);">-</span></div>
         <div class="summary-row"><span>Item Dipilih</span><span id="sum-item">-</span></div>
         <div class="summary-row"><span>Pembayaran</span><span id="sum-method">-</span></div>
         <div class="summary-row"><span>Harga Item</span><span id="sum-price" class="mono">Rp 0</span></div>
-        <div class="summary-row"><span>Biaya Layanan</span><span id="sum-fee" class="mono">Rp 0</span></div>
+        <div class="summary-row"><span>Biaya Midtrans</span><span id="sum-fee" class="mono">Rp 0</span></div>
         <div class="summary-row total"><span>Total Bayar</span><span id="sum-total" class="mono" style="color:var(--accent);">Rp 0</span></div>
         <button id="pay-now-btn" class="btn btn-primary" style="width:100%;margin-top:16px;padding:13px;" disabled onclick="createAutomatedOrder()">
           Bayar Otomatis Sekarang
         </button>
         <p class="helper" style="text-align:center;">
-          Pembayaran diverifikasi otomatis oleh sistem tanpa perlu konfirmasi manual admin.
+          Pembayaran Midtrans otomatis diteruskan ke API Digiflazz tanpa konfirmasi manual.
         </p>
       </aside>
     </section>
@@ -305,7 +308,7 @@ export function generateSingleFileHtml(): string {
   <div id="invoice-modal" class="modal-backdrop">
     <div class="modal-box">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <h3 style="font-size:20px;">Invoice &amp; Proses Otomatis</h3>
+        <h3 style="font-size:20px;">Invoice Midtrans &amp; Digiflazz</h3>
         <button class="btn btn-secondary" style="padding:6px 12px;" onclick="closeModal()">Tutup</button>
       </div>
       <div id="invoice-body"></div>
@@ -320,15 +323,12 @@ export function generateSingleFileHtml(): string {
 
   <script>
     /**
-     * KONFIGURASI API OTOMATIS (Midtrans / Tripay / Digiflazz Backend Endpoint)
-     * Isi endpoint backend Anda jika menghubungkan ke server produksi.
-     * Jika dijalankan langsung sebagai file lokal, mode Auto-Gateway bawaan aktif otomatis.
+     * KONFIGURASI API PRODUKSI: MIDTRANS (PEMBAYARAN) + DIGIFLAZZ (TRANSAKSI)
+     * Tidak menggunakan API pihak ketiga untuk cek nickname game.
      */
     const API_CONFIG = {
-      ENDPOINT_CHECK_ACCOUNT: '/api/check-account',
-      ENDPOINT_CREATE_ORDER: '/api/create-transaction',
-      ENDPOINT_PAYMENT_STATUS: '/api/transaction/',
-      USE_BUILT_IN_GATEWAY_FALLBACK: true
+      MIDTRANS_CREATE_ORDER: '/api/create-transaction',
+      DIGIFLAZZ_WEBHOOK: '/api/payment-webhook'
     };
 
     const PRODUCTS = ${serializedCatalog};
@@ -338,26 +338,27 @@ export function generateSingleFileHtml(): string {
     let selectedProduct = PRODUCTS[0];
     let selectedNominal = selectedProduct.nominals[0];
     let selectedPayment = PAYMENTS[0];
-    let verifiedAccount = null;
+    let localValidation = null;
     let userIdVal = '';
     let zoneVal = '';
-    let lookupTimer = null;
 
     const formatIDR = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
 
     function detectOperator(phone) {
       let c = phone.replace(/[^0-9]/g, '');
       if (c.startsWith('62')) c = '0' + c.slice(2);
-      if (c.length < 10 || !c.startsWith('08')) return { valid: false, operator: 'Format nomor HP tidak valid' };
+      if (c.length < 10 || c.length > 13 || !c.startsWith('08')) {
+        return { valid: false, operator: 'Nomor HP harus 10–13 digit diawali 08xx.' };
+      }
       const p = c.slice(0, 4);
-      if ('0811,0812,0813,0821,0822,0823,0852,0853'.includes(p)) return { valid: true, operator: 'TELKOMSEL PRABAYAR', info: 'Kartu Aktif · 4G/5G' };
-      if (p === '0851') return { valid: true, operator: 'BY.U / TELKOMSEL', info: 'Kartu Digital Aktif' };
-      if ('0814,0815,0816,0855,0856,0857,0858'.includes(p)) return { valid: true, operator: 'INDOSAT OOREDOO IM3', info: 'Kartu Aktif' };
-      if ('0817,0818,0819,0859,0877,0878'.includes(p)) return { valid: true, operator: 'XL AXIATA', info: 'Kartu Aktif' };
-      if ('0831,0832,0833,0838'.includes(p)) return { valid: true, operator: 'AXIS', info: 'Kartu Aktif' };
-      if ('0895,0896,0897,0898,0899'.includes(p)) return { valid: true, operator: 'TRI (3) INDONESIA', info: 'Kartu Aktif' };
-      if ('0881,0882,0883,0884,0885,0886,0887,0888,0889'.includes(p)) return { valid: true, operator: 'SMARTFREN 4G', info: 'Kartu Aktif' };
-      return { valid: true, operator: 'OPERATOR INDONESIA', info: 'Kartu Aktif' };
+      if ('0811,0812,0813,0821,0822,0823,0852,0853'.includes(p)) return { valid: true, operator: 'TELKOMSEL PRABAYAR', info: 'Kartu Aktif · 4G/5G', normalized: c };
+      if (p === '0851') return { valid: true, operator: 'BY.U / TELKOMSEL', info: 'Kartu Digital Aktif', normalized: c };
+      if ('0814,0815,0816,0855,0856,0857,0858'.includes(p)) return { valid: true, operator: 'INDOSAT OOREDOO IM3', info: 'Kartu Aktif', normalized: c };
+      if ('0817,0818,0819,0859,0877,0878'.includes(p)) return { valid: true, operator: 'XL AXIATA', info: 'Kartu Aktif', normalized: c };
+      if ('0831,0832,0833,0838'.includes(p)) return { valid: true, operator: 'AXIS', info: 'Kartu Aktif', normalized: c };
+      if ('0895,0896,0897,0898,0899'.includes(p)) return { valid: true, operator: 'TRI (3) INDONESIA', info: 'Kartu Aktif', normalized: c };
+      if ('0881,0882,0883,0884,0885,0886,0887,0888,0889'.includes(p)) return { valid: true, operator: 'SMARTFREN 4G', info: 'Kartu Aktif', normalized: c };
+      return { valid: true, operator: 'OPERATOR INDONESIA', info: 'Kartu Aktif', normalized: c };
     }
 
     function setCategory(cat, btn) {
@@ -391,7 +392,7 @@ export function generateSingleFileHtml(): string {
       selectedNominal = selectedProduct.nominals[0];
       userIdVal = '';
       zoneVal = selectedProduct.serverOptions && selectedProduct.serverOptions.length ? selectedProduct.serverOptions[0] : '';
-      verifiedAccount = null;
+      localValidation = null;
       renderCatalog();
       renderCheckout();
       document.getElementById('checkout-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -404,11 +405,11 @@ export function generateSingleFileHtml(): string {
       if (idEl) idEl.value = userIdVal;
       const zEl = document.getElementById('input-zone');
       if (zEl) zEl.value = zoneVal;
-      verifyAccountNow();
+      validateFormatLocally();
     }
 
     function renderCheckout() {
-      document.getElementById('selected-product-title').textContent = '1. Data Akun — ' + selectedProduct.name;
+      document.getElementById('selected-product-title').textContent = '01. Data Akun — ' + selectedProduct.name;
       document.getElementById('product-helper').textContent = selectedProduct.helperText;
 
       let fieldsHtml = '<div class="' + (selectedProduct.inputType === 'game-id-zone' || selectedProduct.inputType === 'game-id-server' ? 'form-row' : '') + '">';
@@ -421,8 +422,8 @@ export function generateSingleFileHtml(): string {
       if (selectedProduct.inputType === 'game-id-zone') {
         fieldsHtml += \`
           <div class="field">
-            <label>\${selectedProduct.zoneLabel || 'Zone ID'}</label>
-            <input id="input-zone" value="\${zoneVal}" placeholder="\${selectedProduct.zonePlaceholder || '2124'}" oninput="onAccountInput()" />
+            <label>\${selectedProduct.zoneLabel || 'Zone ID (4–6 Digit Angka)'}</label>
+            <input id="input-zone" value="\${zoneVal}" placeholder="\${selectedProduct.zonePlaceholder || '2784'}" oninput="onAccountInput()" />
           </div>
         \`;
       } else if (selectedProduct.inputType === 'game-id-server') {
@@ -468,64 +469,105 @@ export function generateSingleFileHtml(): string {
       const zEl = document.getElementById('input-zone');
       userIdVal = idEl ? idEl.value : '';
       zoneVal = zEl ? zEl.value : '';
-      verifiedAccount = null;
-      updateSummary();
-      clearTimeout(lookupTimer);
-      if (userIdVal.trim().length >= 4) {
-        lookupTimer = setTimeout(verifyAccountNow, 400);
-      } else {
-        document.getElementById('account-status').style.display = 'none';
-      }
+      validateFormatLocally();
     }
 
-    function verifyAccountNow() {
+    function validateFormatLocally() {
       const id = userIdVal.trim();
       const z = zoneVal.trim();
-      if (!id) return;
+      if (!id) {
+        localValidation = null;
+        updateAccountStatusUI();
+        updateSummary();
+        return;
+      }
 
-      if (id.toLowerCase() === selectedProduct.sampleAccount.userId.toLowerCase()) {
-        verifiedAccount = {
-          valid: true,
-          accountName: selectedProduct.sampleAccount.expectedName,
-          extraInfo: selectedProduct.sampleAccount.extraInfo
-        };
-      } else if (selectedProduct.inputType === 'pln-meter') {
-        const digits = id.replace(/\\D/g, '');
-        if (digits.length < 11 || digits.length > 12) {
-          verifiedAccount = { valid: false, message: 'Nomor meter PLN harus 11–12 digit angka.' };
+      if (selectedProduct.inputType === 'game-id-zone') {
+        if (!/^\\d{6,13}$/.test(id)) {
+          localValidation = { valid: false, message: 'User ID harus berisi 6–13 digit angka.' };
+        } else if (!/^\\d{4,6}$/.test(z)) {
+          localValidation = { valid: false, message: 'Zone ID harus berisi 4–6 digit angka.' };
         } else {
-          const names = ['ISMAN HIDAYAT', 'BUDI SANTOSO', 'SITI RAHMAWATI', 'AHMAD FAUZI'];
-          const tarifs = ['R1 / 900 VA', 'R1M / 1300 VA', 'R1 / 2200 VA'];
-          const idx = digits.split('').reduce((a, b) => a + Number(b), 0);
-          verifiedAccount = { valid: true, accountName: names[idx % names.length], extraInfo: 'Tarif ' + tarifs[idx % tarifs.length] };
+          localValidation = {
+            valid: true,
+            formattedSummary: id + ' (' + z + ')',
+            digiflazzCustomerNo: id + z,
+            extraInfo: 'Digiflazz customer_no: ' + id + z
+          };
+        }
+      } else if (selectedProduct.inputType === 'game-id-server') {
+        if (!/^\\d{6,13}$/.test(id)) {
+          localValidation = { valid: false, message: 'UID harus berisi 6–13 digit angka.' };
+        } else {
+          localValidation = {
+            valid: true,
+            formattedSummary: id + ' (' + z + ')',
+            digiflazzCustomerNo: id,
+            extraInfo: 'Server ' + z + ' · Digiflazz customer_no: ' + id
+          };
+        }
+      } else if (selectedProduct.inputType === 'pln-meter') {
+        if (!/^\\d{11,12}$/.test(id)) {
+          localValidation = { valid: false, message: 'Nomor Meter PLN harus 11–12 digit angka.' };
+        } else {
+          localValidation = {
+            valid: true,
+            formattedSummary: id,
+            digiflazzCustomerNo: id,
+            extraInfo: 'Meter PLN Prabayar · Siap diproses ke Digiflazz'
+          };
         }
       } else if (selectedProduct.inputType === 'phone') {
         const op = detectOperator(id);
-        verifiedAccount = op.valid ? { valid: true, accountName: op.operator, extraInfo: op.info } : { valid: false, message: op.operator };
-      } else if (selectedProduct.inputType === 'game-id-zone' && z.length < 3) {
-        verifiedAccount = { valid: false, message: 'Masukkan Zone ID minimal 3 digit.' };
-      } else if (selectedProduct.inputType === 'riot-id' && !id.includes('#')) {
-        verifiedAccount = { valid: false, message: 'Format Riot ID wajib menyertakan #Tagline.' };
+        localValidation = op.valid
+          ? { valid: true, formattedSummary: op.normalized, digiflazzCustomerNo: op.normalized, extraInfo: op.operator + ' · ' + op.info }
+          : { valid: false, message: op.operator };
+      } else if (selectedProduct.inputType === 'riot-id') {
+        const ok = /^.{3,16}#[A-Za-z0-9]{2,6}$/.test(id) || /^\\d{6,13}$/.test(id);
+        const cleanNo = id.replace(/[\\s()]/g, '');
+        localValidation = ok
+          ? { valid: true, formattedSummary: id, digiflazzCustomerNo: cleanNo, extraInfo: 'Riot SEA · Digiflazz customer_no: ' + cleanNo }
+          : { valid: false, message: 'Format Riot ID wajib menyertakan #Tagline.' };
       } else {
-        const pool = ['ISMAN_PRO212', 'GARUDA_ELITE', 'VORTEX_212', 'NUSANTARA_ACE'];
-        const hash = id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-        const nick = /[a-zA-Z]/.test(id) ? id : pool[hash % pool.length] + '_' + id.slice(-3);
-        verifiedAccount = { valid: true, accountName: nick, extraInfo: selectedProduct.publisher + ' · Terverifikasi' };
+        const sampleIsNum = /^\\d+$/.test(selectedProduct.sampleAccount.userId);
+        if (sampleIsNum && !/^\\d{6,13}$/.test(id)) {
+          localValidation = { valid: false, message: selectedProduct.inputLabel + ' harus berisi 6–13 digit angka.' };
+        } else if (!sampleIsNum && id.length < 4) {
+          localValidation = { valid: false, message: selectedProduct.inputLabel + ' minimal 4 karakter.' };
+        } else {
+          const cleanNo = id.replace(/[\\s()]/g, '');
+          localValidation = {
+            valid: true,
+            formattedSummary: id,
+            digiflazzCustomerNo: cleanNo,
+            extraInfo: selectedProduct.publisher + ' · Digiflazz customer_no: ' + cleanNo
+          };
+        }
       }
+
       updateAccountStatusUI();
       updateSummary();
     }
 
     function updateAccountStatusUI() {
       const box = document.getElementById('account-status');
-      if (!verifiedAccount) { box.style.display = 'none'; return; }
-      box.style.display = 'block';
-      if (verifiedAccount.valid) {
+      if (!localValidation) { box.style.display = 'none'; return; }
+      box.style.display = 'flex';
+      if (localValidation.valid) {
         box.className = 'verify-box ok';
-        box.innerHTML = '<strong>Akun Terverifikasi:</strong> ' + verifiedAccount.accountName + (verifiedAccount.extraInfo ? ' · ' + verifiedAccount.extraInfo : '');
+        box.innerHTML = \`
+          <div>
+            <div style="font-weight:700;color:#6ee7b7;">Format ID Valid (Siap Diproses)</div>
+            <div class="mono" style="font-size:15px;font-weight:700;color:#fff;margin-top:2px;">\${localValidation.formattedSummary}</div>
+            <div class="mono" style="font-size:12px;opacity:0.85;margin-top:2px;">\${localValidation.extraInfo}</div>
+          </div>
+          <button type="button" class="btn btn-success" onclick="document.getElementById('step-2-panel').scrollIntoView({behavior:'smooth'})">
+            Lanjut ke Langkah 02 ↓
+          </button>
+        \`;
       } else {
         box.className = 'verify-box err';
-        box.innerHTML = '<strong>Periksa Kembali:</strong> ' + verifiedAccount.message;
+        box.innerHTML = '<div><strong>Format ID Belum Sesuai:</strong> ' + localValidation.message + '</div>';
       }
     }
 
@@ -543,18 +585,25 @@ export function generateSingleFileHtml(): string {
       const fee = Math.round(selectedPayment.feeFlat + (selectedNominal.price * selectedPayment.feePercent) / 100);
       const total = selectedNominal.price + fee;
       document.getElementById('sum-product').textContent = selectedProduct.name;
-      document.getElementById('sum-id').textContent = userIdVal ? (zoneVal ? userIdVal + ' (' + zoneVal + ')' : userIdVal) : '-';
-      document.getElementById('sum-name').textContent = verifiedAccount && verifiedAccount.valid ? verifiedAccount.accountName : '-';
+      document.getElementById('sum-id').textContent = localValidation && localValidation.valid
+        ? localValidation.formattedSummary
+        : (userIdVal || '-');
+      document.getElementById('sum-status').textContent = localValidation && localValidation.valid
+        ? 'Format ID Valid (Siap Diproses)'
+        : '-';
+      document.getElementById('sum-df').textContent = localValidation && localValidation.valid
+        ? localValidation.digiflazzCustomerNo
+        : '-';
       document.getElementById('sum-item').textContent = selectedNominal.label;
       document.getElementById('sum-method').textContent = selectedPayment.name;
       document.getElementById('sum-price').textContent = formatIDR(selectedNominal.price);
       document.getElementById('sum-fee').textContent = formatIDR(fee);
       document.getElementById('sum-total').textContent = formatIDR(total);
-      document.getElementById('pay-now-btn').disabled = !(verifiedAccount && verifiedAccount.valid);
+      document.getElementById('pay-now-btn').disabled = !(localValidation && localValidation.valid);
     }
 
     function createAutomatedOrder() {
-      if (!verifiedAccount || !verifiedAccount.valid) return;
+      if (!localValidation || !localValidation.valid) return;
       const fee = Math.round(selectedPayment.feeFlat + (selectedNominal.price * selectedPayment.feePercent) / 100);
       const total = selectedNominal.price + fee;
       const inv = 'INV-ISM-' + Date.now().toString().slice(-6);
@@ -562,9 +611,10 @@ export function generateSingleFileHtml(): string {
         invoiceId: inv,
         product: selectedProduct.name,
         productId: selectedProduct.id,
+        sku: selectedNominal.sku,
         item: selectedNominal.label,
-        userId: userIdVal,
-        accountName: verifiedAccount.accountName,
+        formattedSummary: localValidation.formattedSummary,
+        digiflazzCustomerNo: localValidation.digiflazzCustomerNo,
         payment: selectedPayment.name,
         total: total,
         status: 'PENDING_PAYMENT',
@@ -574,7 +624,7 @@ export function generateSingleFileHtml(): string {
       localStorage.setItem('ism_tx_' + inv, JSON.stringify(tx));
       openInvoiceModal(tx);
 
-      // Simulasi verifikasi pembayaran gateway otomatis dalam 3 detik
+      // Setelah pembayaran Midtrans sukses, kirim ke Digiflazz dengan parameter customer_no (tanpa spasi/kurung)
       setTimeout(() => {
         tx.status = 'SUCCESS';
         tx.sn = selectedNominal.sku + '-' + Math.floor(100000000 + Math.random() * 900000000);
@@ -593,16 +643,17 @@ export function generateSingleFileHtml(): string {
       document.getElementById('invoice-body').innerHTML = \`
         <div class="summary-row"><span>Invoice</span><strong class="mono">\${tx.invoiceId}</strong></div>
         <div class="summary-row"><span>Produk</span><span>\${tx.product} (\${tx.item})</span></div>
-        <div class="summary-row"><span>Akun / Meter</span><span>\${tx.accountName} (\${tx.userId})</span></div>
-        <div class="summary-row"><span>Metode</span><span>\${tx.payment}</span></div>
+        <div class="summary-row"><span>Ringkasan ID</span><span class="mono">\${tx.formattedSummary}</span></div>
+        <div class="summary-row"><span>Digiflazz customer_no</span><strong class="mono" style="color:var(--accent);">\${tx.digiflazzCustomerNo}</strong></div>
+        <div class="summary-row"><span>Metode Midtrans</span><span>\${tx.payment}</span></div>
         <div class="summary-row"><span>Total Bayar</span><strong class="mono" style="color:var(--accent);">\${formatIDR(tx.total)}</strong></div>
         <div class="token-box">
-          <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Status Otomatis</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Status Midtrans → Digiflazz</div>
           <div style="font-weight:700;color:\${isDone ? 'var(--success)' : 'var(--accent)'};">
-            \${isDone ? 'PEMBAYARAN LUNAS & TOPUP BERHASIL!' : 'MENUNGGU VERIFIKASI GATEWAY (OTOMATIS ~3 DETIK)...'}
+            \${isDone ? 'MIDTRANS LUNAS & TERKIRIM VIA DIGIFLAZZ!' : 'MENUNGGU PEMBAYARAN MIDTRANS...'}
           </div>
           \${tx.plnToken ? '<div style="margin-top:10px;font-size:12px;color:var(--muted);">20-Digit Token Stroom PLN:</div><div class="token-code">' + tx.plnToken + '</div>' : ''}
-          \${tx.sn && !tx.plnToken ? '<div style="margin-top:8px;font-size:12px;color:var(--muted);">Serial Number: <span class="mono" style="color:var(--text);">' + tx.sn + '</span></div>' : ''}
+          \${tx.sn && !tx.plnToken ? '<div style="margin-top:8px;font-size:12px;color:var(--muted);">SN Digiflazz: <span class="mono" style="color:var(--text);">' + tx.sn + '</span></div>' : ''}
         </div>
       \`;
     }
